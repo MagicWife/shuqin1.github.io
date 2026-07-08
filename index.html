@@ -162,7 +162,7 @@
     </div>
     <div style="margin-top:12px;background:var(--panel-2);border-radius:8px;padding:10px;text-align:center">
       <div class="counter" style="color:var(--sys)"><span id="rateVal">0</span><span style="font-size:14px"> Hz</span></div>
-      <div class="lbl">实时采样率（包/秒）</div>
+      <div class="lbl">实时采样率（条/秒）</div>
     </div>
 
     <h2>GATT 通道</h2>
@@ -375,7 +375,7 @@ function onRecv(event) {
 
   rxBytes += bytes.length;
   updateCounters();
-  markArrival();   // 采样率统计
+  markArrival(countValues(bytesToStr(bytes)));   // 采样率统计（按数值条数）
 
   const fmt = document.querySelector('input[name=rxfmt]:checked').value;
   const text = fmt === 'hex' ? bytesToHex(bytes) : bytesToStr(bytes);
@@ -427,11 +427,19 @@ function stopLoop() {
   if (loopTimer) { clearInterval(loopTimer); loopTimer = null; sys('停止循环发送'); }
 }
 
-// ---------- 采样率估计 ----------
-const rxTimes = [];   // 最近数据包到达时刻(ms)
-function markArrival() {
+// ---------- 采样率估计（按数值条数/秒）----------
+const rxTimes = [];    // 最近数据包到达时刻(ms)
+const rxCounts = [];   // 对应每包内解析出的数值条数
+
+// 一个包里可能含多个数值：按空白、逗号、分号分隔计数
+function countValues(s) {
+  const m = s.trim().match(/[^\s,;]+/g);
+  return m ? m.length : 0;
+}
+function markArrival(count) {
   rxTimes.push(performance.now());
-  if (rxTimes.length > 60) rxTimes.shift();
+  rxCounts.push(count);
+  if (rxTimes.length > 60) { rxTimes.shift(); rxCounts.shift(); }
 }
 function currentRate() {
   const n = rxTimes.length;
@@ -439,7 +447,9 @@ function currentRate() {
   const from = Math.max(0, n - 21);          // 最多用最近 20 个间隔求平均
   const span = rxTimes[n - 1] - rxTimes[from];
   if (span <= 0) return 0;
-  return (n - 1 - from) * 1000 / span;       // 包/秒 (Hz)
+  let sum = 0;                               // 窗口内(首包之后)到达的数值条数
+  for (let i = from + 1; i < n; i++) sum += rxCounts[i];
+  return sum * 1000 / span;                  // 条/秒
 }
 setInterval(() => {
   let rate = currentRate();
