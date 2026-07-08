@@ -381,9 +381,9 @@ function onRecv(event) {
   const text = fmt === 'hex' ? bytesToHex(bytes) : bytesToStr(bytes);
   addLine('rx', `接收: ${text}  (长度:${bytes.length})`);
 
-  // 正在记录：仅缓存 STR 数值
+  // 正在记录：缓存时间戳 + 原始 STR 数据
   if (recording) {
-    recordBuffer.push(bytesToStr(bytes));
+    recordBuffer.push({ ts: nowStamp(), str: bytesToStr(bytes) });
     updateRecInfo();
   }
 }
@@ -431,10 +431,9 @@ function stopLoop() {
 const rxTimes = [];    // 最近数据包到达时刻(ms)
 const rxCounts = [];   // 对应每包内解析出的数值条数
 
-// 一个包里可能含多个数值：按空白、逗号、分号分隔计数
+// 一个包里可能含多条数据：按换行分隔计数（忽略空行）
 function countValues(s) {
-  const m = s.trim().match(/[^\s,;]+/g);
-  return m ? m.length : 0;
+  return s.split(/\r?\n/).filter(x => x.trim() !== '').length;
 }
 function markArrival(count) {
   rxTimes.push(performance.now());
@@ -509,8 +508,9 @@ function exportRecording() {
     sys('■ 已结束记录：本段未收到任何数据，未生成文件。');
     return;
   }
-  // 只保存 STR 数值，每条一行
-  const blob = new Blob([recordBuffer.join('\r\n')], { type: 'text/plain;charset=utf-8' });
+  // 每条 = 时间戳 + 原始 STR 数据
+  const text = recordBuffer.map(e => `[${e.ts}] ${e.str}`).join('\r\n');
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
