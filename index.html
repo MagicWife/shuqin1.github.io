@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HLK-B40 蓝牙串口透传 · 网页版实时接收 Demo</title>
+<style>
+  :root {
+    --bg: #0f1420;
+    --panel: #182030;
+    --panel-2: #1f2a3d;
+    --line: #2b3a55;
+    --text: #e6edf7;
+    --muted: #8b98ad;
+    --accent: #3d8bfd;
+    --accent-2: #2563eb;
+    --green: #22c55e;
+    --red: #ef4444;
+    --rx: #4ade80;
+    --tx: #60a5fa;
+    --sys: #a78bfa;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    padding: 12px 18px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  header .sub { color: var(--muted); font-size: 12px; }
+  .grow { flex: 1; }
+
+  .status-dot {
+    display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+    background: var(--red); margin-right: 6px; vertical-align: middle;
+  }
+  .status-dot.on { background: var(--green); box-shadow: 0 0 8px var(--green); }
+
+  button {
+    background: var(--accent-2);
+    color: #fff; border: none; border-radius: 7px;
+    padding: 8px 14px; font-size: 13px; cursor: pointer;
+    transition: background .15s;
+  }
+  button:hover { background: var(--accent); }
+  button:disabled { background: #33415c; color: #6b7688; cursor: not-allowed; }
+  button.ghost { background: transparent; border: 1px solid var(--line); color: var(--text); }
+  button.ghost:hover { background: var(--panel-2); }
+  button.danger { background: #7f1d1d; }
+  button.danger:hover { background: var(--red); }
+
+  main { flex: 1; display: flex; min-height: 0; }
+
+  /* left info panel */
+  .side {
+    width: 260px; background: var(--panel); border-right: 1px solid var(--line);
+    padding: 14px; overflow-y: auto; flex-shrink: 0;
+  }
+  .side h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .5px;
+    color: var(--muted); margin: 18px 0 8px; }
+  .side h2:first-child { margin-top: 0; }
+  .kv { display: flex; justify-content: space-between; font-size: 12px;
+    padding: 5px 0; border-bottom: 1px dashed #24314a; gap: 8px; }
+  .kv .k { color: var(--muted); flex-shrink: 0; }
+  .kv .v { text-align: right; word-break: break-all; font-family: ui-monospace, "Consolas", monospace; }
+  .counter { font-size: 22px; font-family: ui-monospace, monospace; }
+  .counter.rx { color: var(--rx); }
+  .counter.tx { color: var(--tx); }
+  .counters { display: flex; gap: 12px; }
+  .counters > div { flex: 1; background: var(--panel-2); border-radius: 8px; padding: 10px; text-align: center; }
+  .counters .lbl { font-size: 11px; color: var(--muted); }
+
+  /* center log */
+  .center { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .toolbar {
+    padding: 8px 14px; display: flex; align-items: center; gap: 10px;
+    background: var(--panel-2); border-bottom: 1px solid var(--line); flex-wrap: wrap;
+  }
+  .toolbar label { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 4px; }
+  #log {
+    flex: 1; overflow-y: auto; padding: 12px 14px; margin: 0;
+    font-family: ui-monospace, "Consolas", monospace; font-size: 12.5px;
+    line-height: 1.55; white-space: pre-wrap; word-break: break-all;
+  }
+  .line { margin: 0; }
+  .line .ts { color: var(--muted); }
+  .line.rx .arrow { color: var(--rx); }
+  .line.tx .arrow { color: var(--tx); }
+  .line.sys { color: var(--sys); }
+  .line.err { color: var(--red); }
+
+  /* send bar */
+  .sendbar {
+    padding: 10px 14px; background: var(--panel); border-top: 1px solid var(--line);
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  }
+  .sendbar input[type=text] {
+    flex: 1; min-width: 180px; background: var(--panel-2); border: 1px solid var(--line);
+    color: var(--text); border-radius: 7px; padding: 9px 12px; font-size: 13px;
+    font-family: ui-monospace, monospace;
+  }
+  .sendbar input:focus { outline: none; border-color: var(--accent); }
+  .radio-group { display: flex; gap: 4px; background: var(--panel-2); border-radius: 7px; padding: 3px; }
+  .radio-group label {
+    font-size: 12px; padding: 5px 10px; border-radius: 5px; cursor: pointer; color: var(--muted);
+  }
+  .radio-group input { display: none; }
+  .radio-group input:checked + span { color: #fff; }
+  .radio-group label:has(input:checked) { background: var(--accent-2); }
+  .radio-group label span { color: inherit; }
+
+  .repeat { display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); }
+  .repeat input[type=number] { width: 64px; background: var(--panel-2); border: 1px solid var(--line);
+    color: var(--text); border-radius: 5px; padding: 5px 6px; font-size: 12px; }
+
+  .notice { background: #422006; color: #fbbf24; padding: 8px 18px; font-size: 12.5px; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🔵 HLK-B40 蓝牙串口透传</h1>
+  <span class="sub">网页版实时接收 Demo · Web Bluetooth</span>
+  <span class="grow"></span>
+  <span id="statusText"><span class="status-dot" id="statusDot"></span>未连接</span>
+  <button id="btnConnect">连接设备</button>
+  <button id="btnDisconnect" class="ghost" disabled>断开</button>
+</header>
+
+<div class="notice" id="compatNotice" style="display:none">
+  ⚠️ 当前浏览器不支持 Web Bluetooth API。请使用 <b>Chrome / Edge</b>（桌面版或 Android），并通过 <b>https://</b> 或 <b>localhost</b> 打开本页面。
+</div>
+
+<main>
+  <aside class="side">
+    <h2>设备信息</h2>
+    <div class="kv"><span class="k">名称</span><span class="v" id="devName">—</span></div>
+    <div class="kv"><span class="k">ID</span><span class="v" id="devId">—</span></div>
+    <div class="kv"><span class="k">MTU</span><span class="v" id="devMtu">默认(20)</span></div>
+
+    <h2>数据统计</h2>
+    <div class="counters">
+      <div><div class="counter rx" id="rxCount">0</div><div class="lbl">接收字节</div></div>
+      <div><div class="counter tx" id="txCount">0</div><div class="lbl">发送字节</div></div>
+    </div>
+
+    <h2>GATT 通道</h2>
+    <div class="kv"><span class="k">Service</span><span class="v">0xFFF0</span></div>
+    <div class="kv"><span class="k">Notify (RX)</span><span class="v">0xFFF1</span></div>
+    <div class="kv"><span class="k">Write (TX)</span><span class="v">0xFFF2</span></div>
+    <p style="font-size:11px;color:var(--muted);line-height:1.5;margin-top:14px">
+      与官方 App 的“串口透传(TRX)”页面一致：订阅 FFF1 的 Notify 接收模块上行数据，写 FFF2 下发数据。
+    </p>
+  </aside>
+
+  <section class="center">
+    <div class="toolbar">
+      <span style="font-size:12px;color:var(--muted)">接收显示：</span>
+      <div class="radio-group">
+        <label><input type="radio" name="rxfmt" value="str" checked><span>字符 (STR)</span></label>
+        <label><input type="radio" name="rxfmt" value="hex"><span>十六进制 (HEX)</span></label>
+      </div>
+      <label><input type="checkbox" id="autoscroll" checked> 自动滚动</label>
+      <label><input type="checkbox" id="showTs" checked> 显示时间戳</label>
+      <span class="grow"></span>
+      <button class="ghost" id="btnClear">清空日志</button>
+    </div>
+
+    <pre id="log"></pre>
+
+    <div class="sendbar">
+      <div class="radio-group" title="发送数据格式">
+        <label><input type="radio" name="txfmt" value="str" checked><span>STR</span></label>
+        <label><input type="radio" name="txfmt" value="hex"><span>HEX</span></label>
+      </div>
+      <input type="text" id="sendInput" placeholder="输入要发送的数据…（HEX 模式如：01 A2 FF）" disabled>
+      <div class="repeat" title="定时循环发送">
+        <label><input type="checkbox" id="loopSend"> 循环</label>
+        <input type="number" id="loopInterval" value="1000" min="10" title="间隔(ms)"> ms
+      </div>
+      <button id="btnSend" disabled>发送</button>
+    </div>
+  </section>
+</main>
+
+<script>
+"use strict";
+
+// ===== HLK-B40 串口透传 UUID（取自 App 源码 BaseActivity.java）=====
+const SERIAL_SERVICE = 0xfff0;                              // strSerial_Server
+const RX_CHAR = 0x0000fff1;                                 // strSerial_Read  (Notify, 模块->手机)
+const TX_CHAR = 0x0000fff2;                                 // strSerial_Write (Write,  手机->模块)
+
+// full 128-bit forms for filtering / display
+const uuid16 = (n) => `0000${n.toString(16).padStart(4,'0')}-0000-1000-8000-00805f9b34fb`;
+
+let device = null;
+let server = null;
+let rxChar = null;
+let txChar = null;
+let loopTimer = null;
+let rxBytes = 0, txBytes = 0;
+
+// ---------- DOM ----------
+const $ = (id) => document.getElementById(id);
+const logEl = $('log');
+const btnConnect = $('btnConnect');
+const btnDisconnect = $('btnDisconnect');
+const btnSend = $('btnSend');
+const sendInput = $('sendInput');
+
+// ---------- helpers ----------
+function nowStamp() {
+  const d = new Date();
+  const p = (n, l=2) => String(n).padStart(l, '0');
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}:${p(d.getMilliseconds(),3)}`;
+}
+
+function bytesToHex(bytes) {
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
+}
+function bytesToStr(bytes) {
+  // 与 App 一致：new String(bytes) —— 按 UTF-8 解码，无法解码的字节回退显示
+  try { return new TextDecoder('utf-8', { fatal: false }).decode(bytes); }
+  catch { return bytesToHex(bytes); }
+}
+function strToBytes(s) { return new TextEncoder().encode(s); }
+function hexToBytes(s) {
+  const clean = s.replace(/[^0-9a-fA-F]/g, '');
+  if (clean.length % 2 !== 0) throw new Error('HEX 长度必须为偶数');
+  const out = new Uint8Array(clean.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(clean.substr(i * 2, 2), 16);
+  return out;
+}
+
+function addLine(kind, text) {
+  const showTs = $('showTs').checked;
+  const line = document.createElement('div');
+  line.className = 'line ' + kind;
+  let arrow = '';
+  if (kind === 'rx') arrow = '<span class="arrow">&lt;&lt;&lt; </span>';
+  else if (kind === 'tx') arrow = '<span class="arrow">&gt;&gt;&gt; </span>';
+  const ts = showTs ? `<span class="ts">${nowStamp()} </span>` : '';
+  line.innerHTML = ts + arrow + escapeHtml(text);
+  logEl.appendChild(line);
+  // 限制行数（对齐 App 的 200 行上限）
+  while (logEl.childNodes.length > 500) logEl.removeChild(logEl.firstChild);
+  if ($('autoscroll').checked) logEl.scrollTop = logEl.scrollHeight;
+}
+function escapeHtml(s) {
+  return s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+}
+function sys(msg)  { addLine('sys', msg); }
+function err(msg)  { addLine('err', '错误: ' + msg); }
+
+function setConnected(on) {
+  $('statusDot').classList.toggle('on', on);
+  $('statusText').lastChild.textContent = on ? '已连接' : '未连接';
+  btnConnect.disabled = on;
+  btnDisconnect.disabled = !on;
+  btnSend.disabled = !on;
+  sendInput.disabled = !on;
+  if (!on) { $('loopSend').checked = false; stopLoop(); }
+}
+
+function updateCounters() {
+  $('rxCount').textContent = rxBytes;
+  $('txCount').textContent = txBytes;
+}
+
+// ---------- connect ----------
+async function connect() {
+  if (!navigator.bluetooth) { err('浏览器不支持 Web Bluetooth'); return; }
+  try {
+    sys('正在请求设备…（在弹窗中选择 HLK-B40 模块）');
+    device = await navigator.bluetooth.requestDevice({
+      // 允许显示全部设备，同时确保能访问串口透传服务
+      filters: [
+        { services: [SERIAL_SERVICE] }
+      ],
+      optionalServices: [SERIAL_SERVICE]
+    }).catch(async (e) => {
+      // 有些模块广播里不含 service，退回按全部设备选择
+      if (e && e.name === 'NotFoundError') {
+        sys('未按服务过滤到设备，改为显示全部可用设备…');
+        return navigator.bluetooth.requestDevice({
+          acceptAllDevices: true,
+          optionalServices: [SERIAL_SERVICE]
+        });
+      }
+      throw e;
+    });
+
+    $('devName').textContent = device.name || '(无名称)';
+    $('devId').textContent = device.id || '—';
+    device.addEventListener('gattserverdisconnected', onDisconnected);
+
+    sys(`正在连接 GATT: ${device.name || device.id} …`);
+    server = await device.gatt.connect();
+
+    sys('正在发现服务…');
+    const service = await server.getPrimaryService(SERIAL_SERVICE);
+
+    txChar = await service.getCharacteristic(TX_CHAR);
+    rxChar = await service.getCharacteristic(RX_CHAR);
+
+    sys(`已找到透传服务 ${uuid16(SERIAL_SERVICE)}`);
+    sys(`Write 特征: ${uuid16(TX_CHAR)}`);
+    sys(`Notify 特征: ${uuid16(RX_CHAR)}`);
+
+    // 订阅通知（等价于 App 中写 CCCD 2902 = ENABLE_NOTIFICATION_VALUE）
+    await rxChar.startNotifications();
+    rxChar.addEventListener('characteristicvaluechanged', onRecv);
+    sys('已订阅 Notify，开始实时接收数据 ✔');
+
+    // Web Bluetooth 会自动协商更大的 MTU（Android 上通常 185~517）
+    $('devMtu').textContent = '自动协商';
+
+    setConnected(true);
+    sys('=== 连接成功，Connected to GATT server. ===');
+  } catch (e) {
+    err(e.message || String(e));
+    if (device && device.gatt && device.gatt.connected) device.gatt.disconnect();
+  }
+}
+
+function onDisconnected() {
+  sys('=== Disconnected from GATT server. ===');
+  setConnected(false);
+  rxChar = null; txChar = null; server = null;
+}
+
+function disconnect() {
+  stopLoop();
+  if (device && device.gatt && device.gatt.connected) {
+    device.gatt.disconnect();      // 触发 onDisconnected
+  } else {
+    setConnected(false);
+  }
+}
+
+// ---------- receive ----------
+function onRecv(event) {
+  const value = event.target.value;           // DataView
+  const bytes = new Uint8Array(value.buffer);
+  if (bytes.length === 0) return;
+
+  rxBytes += bytes.length;
+  updateCounters();
+
+  const fmt = document.querySelector('input[name=rxfmt]:checked').value;
+  const text = fmt === 'hex' ? bytesToHex(bytes) : bytesToStr(bytes);
+  addLine('rx', `接收: ${text}  (长度:${bytes.length})`);
+}
+
+// ---------- send ----------
+async function sendOnce() {
+  if (!txChar) return;
+  const raw = sendInput.value;
+  if (raw === '') return;
+  const fmt = document.querySelector('input[name=txfmt]:checked').value;
+
+  let bytes;
+  try {
+    bytes = fmt === 'hex' ? hexToBytes(raw) : strToBytes(raw);
+  } catch (e) { err(e.message); return; }
+  if (bytes.length === 0) return;
+
+  try {
+    // 优先无响应写（对齐 App 的 WRITE_TYPE_NO_RESPONSE），不支持则退回普通写
+    if (txChar.writeValueWithoutResponse) {
+      await txChar.writeValueWithoutResponse(bytes);
+    } else {
+      await txChar.writeValue(bytes);
+    }
+    txBytes += bytes.length;
+    updateCounters();
+    const shown = fmt === 'hex' ? bytesToHex(bytes) : raw;
+    addLine('tx', `发送: ${shown}  (长度:${bytes.length})`);
+  } catch (e) {
+    err('发送失败: ' + (e.message || e));
+  }
+}
+
+function startLoop() {
+  stopLoop();
+  const interval = Math.max(10, parseInt($('loopInterval').value) || 1000);
+  loopTimer = setInterval(sendOnce, interval);
+  sys(`开始循环发送，间隔 ${interval}ms`);
+}
+function stopLoop() {
+  if (loopTimer) { clearInterval(loopTimer); loopTimer = null; sys('停止循环发送'); }
+}
+
+// ---------- events ----------
+btnConnect.addEventListener('click', connect);
+btnDisconnect.addEventListener('click', disconnect);
+btnSend.addEventListener('click', sendOnce);
+sendInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendOnce(); });
+$('btnClear').addEventListener('click', () => {
+  logEl.innerHTML = '';
+  rxBytes = 0; txBytes = 0; updateCounters();
+});
+$('loopSend').addEventListener('change', (e) => {
+  if (e.target.checked) {
+    if (!txChar) { e.target.checked = false; return; }
+    if (sendInput.value === '') { e.target.checked = false; err('请先输入要循环发送的数据'); return; }
+    startLoop();
+  } else stopLoop();
+});
+
+// 兼容性检测
+if (!navigator.bluetooth) {
+  $('compatNotice').style.display = 'block';
+  btnConnect.disabled = true;
+}
+
+setConnected(false);
+sys('就绪。点击右上角「连接设备」开始。');
+sys(`目标: HLK-B40 串口透传服务 ${uuid16(SERIAL_SERVICE)}`);
+</script>
+</body>
+</html>
