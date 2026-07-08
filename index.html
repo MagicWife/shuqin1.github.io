@@ -61,6 +61,9 @@
   button.ghost:hover { background: var(--panel-2); }
   button.danger { background: #7f1d1d; }
   button.danger:hover { background: var(--red); }
+  button.recording { background: var(--red); animation: pulse 1.2s infinite; }
+  button.recording:hover { background: #dc2626; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .55; } }
 
   main { flex: 1; display: flex; min-height: 0; }
 
@@ -177,6 +180,8 @@
       <label><input type="checkbox" id="autoscroll" checked> 自动滚动</label>
       <label><input type="checkbox" id="showTs" checked> 显示时间戳</label>
       <span class="grow"></span>
+      <span id="recInfo" style="font-size:12px;color:var(--muted);display:none"></span>
+      <button id="btnRecord">● 开始记录</button>
       <button class="ghost" id="btnClear">清空日志</button>
     </div>
 
@@ -214,6 +219,11 @@ let rxChar = null;
 let txChar = null;
 let loopTimer = null;
 let rxBytes = 0, txBytes = 0;
+
+// ===== 数据记录 =====
+let recording = false;
+let recordStartStamp = '';
+const recordBuffer = [];   // { ts, len, str, hex }
 
 // ---------- DOM ----------
 const $ = (id) => document.getElementById(id);
@@ -365,6 +375,17 @@ function onRecv(event) {
   const fmt = document.querySelector('input[name=rxfmt]:checked').value;
   const text = fmt === 'hex' ? bytesToHex(bytes) : bytesToStr(bytes);
   addLine('rx', `接收: ${text}  (长度:${bytes.length})`);
+
+  // 正在记录：缓存这条数据
+  if (recording) {
+    recordBuffer.push({
+      ts: nowStamp(),
+      len: bytes.length,
+      str: bytesToStr(bytes),
+      hex: bytesToHex(bytes)
+    });
+    updateRecInfo();
+  }
 }
 
 // ---------- send ----------
@@ -406,10 +427,90 @@ function stopLoop() {
   if (loopTimer) { clearInterval(loopTimer); loopTimer = null; sys('停止循环发送'); }
 }
 
+// ---------- 数据记录 ----------
+function updateRecInfo() {
+  const info = $('recInfo');
+  if (recording) {
+    info.style.display = 'inline';
+    info.style.color = 'var(--red)';
+    info.textContent = `● 记录中… 已存 ${recordBuffer.length} 条`;
+  } else {
+    info.style.display = 'none';
+  }
+}
+
+// 生成 20260708_163045 形式的时间戳，用于文件名
+function fileStamp() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+}
+
+function toggleRecord() {
+  if (!recording) {
+    // 开始记录
+    recordBuffer.length = 0;
+    recording = true;
+    recordStartStamp = nowStamp();
+    $('btnRecord').textContent = '■ 结束记录';
+    $('btnRecord').classList.add('recording');
+    updateRecInfo();
+    sys('▶ 开始记录数据…');
+  } else {
+    // 结束记录并导出
+    recording = false;
+    $('btnRecord').textContent = '● 开始记录';
+    $('btnRecord').classList.remove('recording');
+    $('recInfo').style.display = 'none';
+    exportRecording();
+  }
+}
+
+function exportRecording() {
+  if (recordBuffer.length === 0) {
+    sys('■ 已结束记录：本段未收到任何数据，未生成文件。');
+    return;
+  }
+  const totalBytes = recordBuffer.reduce((s, e) => s + e.len, 0);
+  const lines = [];
+  lines.push('==================================================');
+  lines.push(' HLK-B40 蓝牙数据记录');
+  lines.push('==================================================');
+  lines.push(`设备名称 : ${$('devName').textContent}`);
+  lines.push(`设备ID   : ${$('devId').textContent}`);
+  lines.push(`开始时间 : ${recordStartStamp}`);
+  lines.push(`结束时间 : ${nowStamp()}`);
+  lines.push(`数据包数 : ${recordBuffer.length}`);
+  lines.push(`总字节数 : ${totalBytes}`);
+  lines.push('--------------------------------------------------');
+  lines.push('时间戳         | 长度 | HEX / STR');
+  lines.push('--------------------------------------------------');
+  for (const e of recordBuffer) {
+    lines.push(`[${e.ts}] len=${e.len}`);
+    lines.push(`  HEX: ${e.hex}`);
+    lines.push(`  STR: ${e.str}`);
+  }
+  lines.push('--------------------------------------------------');
+  lines.push('(记录结束)');
+
+  const blob = new Blob([lines.join('\r\n')], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `HLK_data_${fileStamp()}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  sys(`■ 已结束记录：共 ${recordBuffer.length} 条 / ${totalBytes} 字节，已生成文件 ${a.download}`);
+}
+
 // ---------- events ----------
 btnConnect.addEventListener('click', connect);
 btnDisconnect.addEventListener('click', disconnect);
 btnSend.addEventListener('click', sendOnce);
+$('btnRecord').addEventListener('click', toggleRecord);
 sendInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendOnce(); });
 $('btnClear').addEventListener('click', () => {
   logEl.innerHTML = '';
